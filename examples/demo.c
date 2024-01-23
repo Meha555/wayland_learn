@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <wayland-client.h>
 
-#include "xdg-shell-client-protocol.h"
+#include "../inc/extra/xdg-shell-client-protocol.h"
 
 struct wl_compositor *comp;
 struct wl_surface *srfc;

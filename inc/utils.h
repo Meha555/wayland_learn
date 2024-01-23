@@ -1,6 +1,9 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <stdio.h>
+#include <stdlib.h>
+
 #define ERROR_CHECK(handle, errormsg, successmsg) \
   do {                                            \
     if (!handle) {                                \
@@ -23,6 +26,20 @@
     }                                           \
   } while (0)
 
-enum color_enum { BLACK = 0x0, WHITE = 0xffffff };
+enum color_enum {
+  BLACK = 0x0,
+  WHITE = 0xffffff,
+  RED = 0xFF0000,
+  ORRANGE = 0xFF7F00,
+  YELLOW = 0xFFFF00,
+  GREEN = 0x00FF00,
+  CYAN = 0x00FFFF,
+  BLUE = 0x0000FF,
+  PURPLE = 0x8B00FF,
+};
+
+int set_cloexec_or_close(int fd);
+int create_tmpfile_cloexec(char* tmpname);
+int os_create_anonymous_file(off_t size);
 
 #endif  // UTILS_H
