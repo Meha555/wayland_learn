@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+// #define HAS_XDG_
+
 #define ERROR_CHECK(handle, errormsg, successmsg) \
   do {                                            \
     if (!handle) {                                \

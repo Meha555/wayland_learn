@@ -31,6 +31,10 @@ wayland-scanner private-code ~/dev/source_code/Wayland/wayland-protocols/stable/
 wayland-scanner client-header ~/dev/source_code/Wayland/wayland-protocols/stable/xdg-shell/xdg-shell.xml xdg-shell-client-protocol.h
 ```
 
+## 编译运行
+
+如果出现段错误，debug看一下这些全局对象的代理是否申请成功。我设的初值都是 `NULL` ，因此如果没有申请到，就会是 `0X00000` 。据此判断当前安装的 Wayland 协议是否支持。
+
 ## 参考资料
 
 1. [Wayland开发入门系列索引](https://zhuanlan.zhihu.com/p/423462310)

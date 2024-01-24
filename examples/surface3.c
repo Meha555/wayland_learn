@@ -20,8 +20,8 @@ struct wl_callback *frame_callback;
 
 void *shm_data;
 
-const int WIDTH = 480;
-const int HEIGHT = 360;
+const int g_width = 480;
+const int g_height = 360;
 
 static void handle_ping(void *data, struct wl_shell_surface *shell_surface,
                         uint32_t serial) {
@@ -124,7 +124,7 @@ static void paint_pixels() {
   int n;
   uint32_t *pixel = shm_data;
 
-  for (n = 0; n < WIDTH * HEIGHT; n++) {
+  for (n = 0; n < g_width * g_height; n++) {
     *pixel++ = pixel_value;
   }
 
@@ -142,7 +142,7 @@ static const struct wl_callback_listener frame_listener;
 static void redraw(void *data, struct wl_callback *callback, uint32_t time) {
   // fprintf(stderr, "Redrawing\n");
   wl_callback_destroy(frame_callback);
-  wl_surface_damage(surface, 0, 0, WIDTH, HEIGHT);
+  wl_surface_damage(surface, 0, 0, g_width, g_height);
   paint_pixels();
   frame_callback = wl_surface_frame(surface);
   wl_surface_attach(surface, buffer, 0, 0);
@@ -154,8 +154,8 @@ static const struct wl_callback_listener frame_listener = {redraw};
 
 static struct wl_buffer *create_buffer() {
   struct wl_shm_pool *pool;
-  int stride = WIDTH * 4;  // 4 bytes per pixel
-  int size = stride * HEIGHT;
+  int stride = g_width * 4;  // 4 bytes per pixel
+  int size = stride * g_height;
   int fd;
   struct wl_buffer *buff;
 
@@ -173,7 +173,7 @@ static struct wl_buffer *create_buffer() {
   }
 
   pool = wl_shm_create_pool(shm, fd, size);
-  buff = wl_shm_pool_create_buffer(pool, 0, WIDTH, HEIGHT, stride,
+  buff = wl_shm_pool_create_buffer(pool, 0, g_width, g_height, stride,
                                    WL_SHM_FORMAT_XRGB8888);
   // wl_buffer_add_listener(buffer, &buffer_listener, buffer);
   wl_shm_pool_destroy(pool);

@@ -39,7 +39,7 @@ int create_tmpfile_cloexec(char* tmpname) {
 
 // 创建一个匿名文件，大小为指定的size字节
 int os_create_anonymous_file(off_t size) {
-  static const char template[] = "/weston-shared-XXXXXX";
+  static const char template[] = "/wayland-shared-XXXXXX";
   const char* path;
   char* name;
   int fd;

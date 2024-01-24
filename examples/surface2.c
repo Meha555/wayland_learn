@@ -20,8 +20,8 @@ struct wl_buffer *buffer;
 
 void *shm_data;
 
-int WIDTH = 480;
-int HEIGHT = 360;
+int g_width = 480;
+int g_height = 360;
 
 static void handle_ping(void *data, struct wl_shell_surface *shell_surface,
                         uint32_t serial) {
@@ -123,15 +123,15 @@ static void paint_pixels() {
   uint32_t *pixel = shm_data;
 
   fprintf(stderr, "Painting pixels\n");
-  for (n = 0; n < WIDTH * HEIGHT; n++) {
+  for (n = 0; n < g_width * g_height; n++) {
     *pixel++ = 0xffff;
   }
 }
 
 static struct wl_buffer *create_buffer() {
   struct wl_shm_pool *pool;
-  int stride = WIDTH * 4;  // 4 bytes per pixel
-  int size = stride * HEIGHT;
+  int stride = g_width * 4;  // 4 bytes per pixel
+  int size = stride * g_height;
   int fd;
   struct wl_buffer *buff;
 
@@ -149,7 +149,7 @@ static struct wl_buffer *create_buffer() {
   }
 
   pool = wl_shm_create_pool(shm, fd, size);
-  buff = wl_shm_pool_create_buffer(pool, 0, WIDTH, HEIGHT, stride,
+  buff = wl_shm_pool_create_buffer(pool, 0, g_width, g_height, stride,
                                    WL_SHM_FORMAT_XRGB8888);
   // wl_buffer_add_listener(buffer, &buffer_listener, buffer);
   wl_shm_pool_destroy(pool);

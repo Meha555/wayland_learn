@@ -3,6 +3,7 @@
 
 #include <linux/input.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -17,6 +18,8 @@
 
 int WIDTH = 480;
 int HEIGHT = 360;
+
+extern bool running;
 
 /* ---------------------------------- 像素格式 ---------------------------------- */
 
@@ -68,11 +71,23 @@ static void on_surface_leave_output(void* data, struct wl_surface* wl_surface,
 struct wl_surface_listener surface_listener = {
     .enter = on_surface_enter_output, .leave = on_surface_leave_output};
 
+#ifdef HAS_XDG_
+static void on_xdg_surface_configure(void* data, 
+                                     struct xdg_surface* xdg_surface, uint32_t serial){
+  printf("Compositor configure xdg_wm_base with sequence: %u\n", serial);
+  xdg_surface_ack_configure(shell_surface, serial); // 发送ack
+  draw_window(0, 0, 480, 360);
+}
+
+struct xdg_surface_listener shell_surface_listener = {
+  .configure = on_xdg_surface_configure
+};
+#else
 static void on_surface_ping(void* data, struct wl_shell_surface* shell_surface,
                             uint32_t serial) {
   // 填写的回调是由客户端自己调用的，不是我们程序员手动调用的
+  printf("Compositor ping to wl_shell_surface: %u\n", serial);
   wl_shell_surface_pong(shell_surface, serial);  // 客户端pong一下
-  printf("Compositor ping : %u\n", serial);
 }
 
 static void on_surface_configure(void* data,
@@ -91,6 +106,18 @@ struct wl_shell_surface_listener shell_surface_listener = {
     .ping = on_surface_ping,
     .configure = on_surface_configure,
     .popup_done = on_surface_popup_done};
+#endif
+
+/* ------------------------------- xdg_wm_base ------------------------------ */
+
+#ifdef HAS_XDG_
+void on_xdg_wm_base_ping(void* data, struct xdg_wm_base* xdg_wm_base, uint32_t serial) {
+  printf("Compositor ping to xdg_wm_base: %u\n", serial);
+  xdg_wm_base_pong(xdg_wm_base, serial);
+}
+
+struct xdg_wm_base_listener xdg_wm_base_listener = { .ping = on_xdg_wm_base_ping };
+#endif
 
 /* -------------------------------- 输入设备（鼠标） -------------------------------- */
 
@@ -117,6 +144,7 @@ static void on_pointer_motion(void* data, struct wl_pointer* pointer,
                               uint32_t time, wl_fixed_t sx, wl_fixed_t sy) {
   printf("Pointer moved at %f %f\n", wl_fixed_to_double(sx),
          wl_fixed_to_double(sy));
+        //  draw_track(wl_fixed_to_double(sx), wl_fixed_to_double(sy));
 }
 
 static void on_pointer_button(void* data, struct wl_pointer* wl_pointer,
@@ -125,7 +153,11 @@ static void on_pointer_button(void* data, struct wl_pointer* wl_pointer,
   printf("Pointer button\n");
   // 当鼠标被按下，并且按的是左键时，就可以移动窗口了
   if (button == BTN_LEFT && state == WL_POINTER_BUTTON_STATE_PRESSED)
+#ifdef HAS_XDG_
+    xdg_toplevel_move(toplevel, seat, serial);
+#else
     wl_shell_surface_move(shell_surface, seat, serial);
+#endif
 }
 
 static void on_pointer_axis(void* data, struct wl_pointer* wl_pointer,
@@ -137,11 +169,41 @@ static void on_pointer_axis(void* data, struct wl_pointer* wl_pointer,
   else if(value < 0 && transpranet > 0) transpranet -= 5;
 }
 
+static void on_pointer_frame(void* data, struct wl_pointer *wl_pointer) {
+  printf("Pointer frame\n");
+}
+
+static void on_pointer_axis_source(void* data, struct wl_pointer* wl_pointer,
+                                   uint32_t axis_source) {
+  printf("Pointer axis source: %u\n", axis_source);
+}
+
+static void on_pointer_axis_stop(void* data, struct wl_pointer* wl_pointer,
+                         uint32_t time, uint32_t axis) {
+  printf("Pointer stop at %u %u\n", time, axis);
+}
+
+static void on_pointer_axis_discrete(void* data, struct wl_pointer* wl_pointer,
+                                     uint32_t axis, int32_t discrete) {
+  printf("Pointer axis discrete at %u %d\n", axis, discrete);
+}
+
+static void on_pointer_warp(void* data, struct wl_pointer* wl_pointer,
+                            wl_fixed_t surface_x, wl_fixed_t surface_y) {
+  printf("Pointer warp at %f %f\n", wl_fixed_to_double(surface_x)
+                                          , wl_fixed_to_double(surface_y));
+}
+
 struct wl_pointer_listener pointer_listener = {.enter = on_pointer_enter,
                                                .leave = on_pointer_leave,
                                                .motion = on_pointer_motion,
                                                .button = on_pointer_button,
-                                               .axis = on_pointer_axis};
+                                               .axis = on_pointer_axis,
+                                               .frame = on_pointer_frame,
+                                               .axis_source = on_pointer_axis_source,
+                                               .axis_stop = on_pointer_axis_stop,
+                                               .axis_discrete = on_pointer_axis_discrete,
+                                               .warp = on_pointer_warp};
 
 /* -------------------------------- 输入设备（键盘） -------------------------------- */
 
@@ -165,8 +227,8 @@ static void on_keyboard_keymap(void* data, struct wl_keyboard* keyboard,
     exit(EXIT_FAILURE);
   }
   close(fd);
-  xkb_state_unref(xkb_state);         // 释放旧的键盘状态
-  xkb_state = xkb_state_new(keymap);  // 更新键盘状态
+  xkb_state_unref(xkb_state); // 释放旧的键盘状态
+  xkb_state = xkb_state_new(keymap); // 更新键盘状态
 }
 // 当前surface获得键盘焦点
 static void on_keyboard_enter(void* data, struct wl_keyboard* keyboard,
@@ -182,10 +244,9 @@ static void on_keyboard_key(void* data, struct wl_keyboard* keyboard,
   if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {  // 当键被按下
     xkb_keysym_t keysym = xkb_state_key_get_one_sym(xkb_state, key + 8);
     uint32_t utf32 = xkb_keysym_to_utf32(keysym);
-    static bool running = true;
     if (utf32) {
-      if (utf32 >= 0x21 &&
-          utf32 <= 0x7E) {  // 如果按下的键是字母或数字，则打印对应的字符
+      // 如果按下的键是字母或数字，则打印对应的字符
+      if (utf32 >= 0x21 && utf32 <= 0x7E) {
         printf("the key %c was pressed\n", (char)utf32);
         if (utf32 == 'q') running = false;  // 如果按下的是 q 键，则终止窗口运行
       } else {  // 如果按下的键是其他键，则打印对应的Unicode编码
@@ -209,12 +270,17 @@ static void on_keyboard_modifiers(void* data, struct wl_keyboard* keyboard,
                         0, group);
 }
 
-static struct wl_keyboard_listener keyboard_listener = {
+static void on_keyboard_repeat_info(void* data, struct wl_keyboard* keyboard, int32_t rate, int32_t delay) {
+  printf("Keyboard repeat info: rate= %d, delay= %d\n", rate, delay);
+}
+
+struct wl_keyboard_listener keyboard_listener = {
     .keymap = on_keyboard_keymap,
     .enter = on_keyboard_enter,
     .leave = on_keyboard_leave,
     .key = on_keyboard_key,
-    .modifiers = on_keyboard_modifiers};
+    .modifiers = on_keyboard_modifiers,
+    .repeat_info = on_keyboard_repeat_info};
 
 /* --------------------------------- 输入设备管理器 -------------------------------- */
 
@@ -229,7 +295,7 @@ static void on_seat_capabilities_changed(void* data, struct wl_seat* seat,
   if ((caps & WL_SEAT_CAPABILITY_POINTER) && !pointer) {
     printf("Display got a Pointer\n");
     pointer = wl_seat_get_pointer(seat);
-    // wl_pointer_add_listener(pointer, &pointer_listener, NULL);
+    wl_pointer_add_listener(pointer, &pointer_listener, NULL);
   }
   // 如果输入设备为鼠标但是当前窗口鼠标指针为空，说明鼠标存在但是已经离开当前窗口
   else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && pointer) {
@@ -240,7 +306,7 @@ static void on_seat_capabilities_changed(void* data, struct wl_seat* seat,
   if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !keyboard) {
     printf("Display got a Keyboard\n");
     keyboard = wl_seat_get_keyboard(seat);
-    // wl_keyboard_add_listener(keyboard, &keyboard_listener, NULL);
+    wl_keyboard_add_listener(keyboard, &keyboard_listener, NULL);
   } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && keyboard) {
     printf("Display lost a Keyboard\n");
     wl_keyboard_release(keyboard);
@@ -276,7 +342,8 @@ struct wl_callback_listener frame_callback_listener = {.done = on_frame_redraw};
 void on_frame_redraw(void* data, struct wl_callback* callback,
                      uint32_t callback_data) {
   // printf("Frame redrawing\n");
-  wl_callback_destroy(callback);  // 不需要这个callback了，可以销毁
+  if(callback) // 这里做这个判断是因为我将这个函数拿去自己用了，就是说不光是由合成器自动调用，因此自己调用的时候callback并没有生成
+    wl_callback_destroy(callback);  // 不需要这个callback了，可以销毁
   paint_pixels_into_shm_data(WIDTH, HEIGHT, GREEN, WHITE);
   // 重新创建一帧，然后填充surface的新内容
   frame_callback = wl_surface_frame(surface);
@@ -286,5 +353,51 @@ void on_frame_redraw(void* data, struct wl_callback* callback,
   wl_surface_damage(surface, 0, 0, WIDTH, HEIGHT);
   wl_surface_commit(surface);
 }
+
+/* ----------------------------------- 注册表 ---------------------------------- */
+
+void on_global_registry_added(void* data, struct wl_registry* registry,
+                              uint32_t id, const char* interface,
+                              uint32_t version) {
+  printf("Global add: %s , version: %u, name: %u\n", interface, version, id);
+
+  if (strcmp(interface, "wl_compositor") == 0) {
+    compositor =
+        wl_registry_bind(registry, id, &wl_compositor_interface, version);
+    ERROR_CHECK(compositor, "Can't find wl_compositor", "Found wl_compositor");
+  }
+#ifdef HAS_XDG_
+  else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
+    shell = wl_registry_bind(registry, id, &xdg_wm_base_interface, version);
+    ERROR_CHECK(shell, "Can't find xdg_shell", "Found xdg_shell");
+    xdg_wm_base_add_listener(shell, &xdg_wm_base_listener, NULL);
+  }
+#else
+  else if (strcmp(interface, "wl_shell") == 0) {
+    shell = wl_registry_bind(registry, id, &wl_shell_interface, version);
+    ERROR_CHECK(shell, "Can't find wl_shell", "Found wl_shell");
+  }
+#endif
+  else if (strcmp(interface, "wl_shm") == 0) {
+    shm = wl_registry_bind(registry, id, &wl_shm_interface, version);
+    ERROR_CHECK(shm, "Can't find wl_shm", "Found wl_shm");
+    wl_shm_add_listener(shm, &shm_listener, NULL);
+    cursor_theme = wl_cursor_theme_load(NULL, 32, shm);
+    default_cursor = wl_cursor_theme_get_cursor(cursor_theme, "left_ptr");
+  } else if (strcmp(interface, "wl_seat") == 0) {
+    seat = wl_registry_bind(registry, id, &wl_seat_interface, version);
+    ERROR_CHECK(seat, "Can't find wl_seat", "Found wl_seat");
+    wl_seat_add_listener(seat, &seat_listener, NULL);
+  }
+}
+
+void on_global_registry_removed(void* data, struct wl_registry* registry,
+                                uint32_t name) {
+  printf("Global remove: name: %u\n", name);
+}
+
+struct wl_registry_listener reg_listener = {
+    .global = on_global_registry_added,
+    .global_remove = on_global_registry_removed};
 
 #endif  // LISTENERS_H
