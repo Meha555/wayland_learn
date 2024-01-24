@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <xkbcommon/xkbcommon.h>
 
 #include "inc/core/defs.h"
 #include "inc/listeners.h"
@@ -25,7 +26,8 @@ struct wl_display* connect_to_server(const char* name) {
   return dpy;
 }
 
-/* ----------------------------------- 注册表 ---------------------------------- */
+/* ----------------------------------- 注册表 ----------------------------------
+ */
 
 void on_global_registry_added(void* data, struct wl_registry* registry,
                               uint32_t id, const char* interface,
@@ -49,6 +51,8 @@ void on_global_registry_added(void* data, struct wl_registry* registry,
     shm = wl_registry_bind(registry, id, &wl_shm_interface, version);
     ERROR_CHECK(shm, "Can't find wl_shm", "Found wl_shm");
     wl_shm_add_listener(shm, &shm_listener, NULL);
+    cursor_theme = wl_cursor_theme_load(NULL, 32, shm);
+    default_cursor = wl_cursor_theme_get_cursor(cursor_theme, "left_ptr");
   } else if (strcmp(interface, "wl_seat") == 0) {
     seat = wl_registry_bind(registry, id, &wl_seat_interface, version);
     ERROR_CHECK(seat, "Can't find wl_seat", "Found wl_seat");
@@ -71,8 +75,8 @@ struct wl_registry* init_registry(struct wl_display* dpy) {
   return reg;
 }
 
-void paint_pixels(int width, int height, enum color_enum color1,
-                  enum color_enum color2) {
+void paint_pixels_into_shm_data(int width, int height, enum color_enum color1,
+                                enum color_enum color2) {
   if (color1 > color2) {
     perror("color2 should bigger than color1\n");
     return;
@@ -82,9 +86,10 @@ void paint_pixels(int width, int height, enum color_enum color1,
     pixel_rgb = color1;
     flag = true;
   }
-  uint32_t* pixel = (uint32_t*)shm_data;  // 获取当前共享内存中的像素值
+  uint32_t* pixel =
+      (uint32_t*)shm_data;  // 这里强转一下，因为后面用到了指针运算
   for (int i = 0; i < width * height; ++i) {
-    *pixel++ = pixel_rgb;  // 改变像素值
+    *pixel++ = (pixel_rgb | transpranet << 24);  // 向共享内存中写入像素值
   }
   // 每个RGB分量增加1
   pixel_rgb += 0x010101;
@@ -98,14 +103,16 @@ struct wl_buffer* create_buffer(uint width, uint height) {
   int size = stride * height;
   int fd = os_create_anonymous_file(size);  // 返回一个匿名文件的文件描述符
   ASSERT_MSG(fd >= 0, "creating a buffer file for %d B failed: %m", size);
+  // 将创建的匿名文件映射到内存中并设置文件保护标志，使之成为共享内存（可读可写）
   shm_data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (shm_data == MAP_FAILED) {
     fprintf(stderr, "mmap failed: %m\n");
     close(fd);
     exit(EXIT_FAILURE);
   }
-
+  // 创建一个客户端使用的共享内存池对象，用来在共享内存上分配缓冲区内存
   struct wl_shm_pool* pool = wl_shm_create_pool(shm, fd, size);
+  // 通过共享内存创建缓冲区
   struct wl_buffer* buff =
       wl_shm_pool_create_buffer(pool, 0, width, height, stride, shm_format);
   wl_buffer_add_listener(buff, &buffer_listener, NULL);
@@ -115,11 +122,11 @@ struct wl_buffer* create_buffer(uint width, uint height) {
 
 void create_window(int x, int y, int width, int height) {
   buffer = create_buffer(width, height);
-  // 1. 将缓冲区绑定到窗口上
+  // 1. 将缓冲区对应到窗口的特定位置
   wl_surface_attach(surface, buffer, x, y);
-  // 2. 标记窗口失效的区域
+  // 2. 标记窗口失效需要重绘的区域
   // wl_surface_damage(surface, x, y, width, height);
-  // 3. 提交挂起的缓冲区到服务器
+  // 3. 提交挂起的缓冲区内容到合成器
   wl_surface_commit(surface);
 }
 
@@ -130,12 +137,14 @@ int main() {
   struct wl_display* dpy = connect_to_server(NULL);
   struct wl_registry* reg = init_registry(dpy);
 
-  wl_display_dispatch(dpy); // 将客户端的请求全部发给服务器
-  wl_display_roundtrip(dpy); // 等待服务器完成发送过去的全部请求的响应
+  wl_display_roundtrip(dpy);  // 等待服务器完成发送过去的全部请求的响应
+  wl_display_dispatch(dpy);  // 在事件队列中读取事件并对其进行排队
 
   surface = wl_compositor_create_surface(compositor);
   ERROR_CHECK(surface, "Can't create surface", "Created surface");
   wl_surface_add_listener(surface, &surface_listener, NULL);
+  cursor_surface = wl_compositor_create_surface(compositor);
+  ERROR_CHECK(surface, "Can't create cursor_surface", "Created cursor_surface");
 
   // struct xdg_surface* shell_surface =
   //     xdg_wm_base_get_xdg_surface(xdg_shell, surface);
@@ -167,6 +176,7 @@ int main() {
   // xdg_wm_base_destro
   // 在服务器端，当相关的 wl_surface
 
+  xkb_context_unref(xkb_context);
   // 被销毁时，wl_shell_surface 对象会自动销毁。在客户端，必须在销毁 wl_surface
   // 对象之前调用 wl_shell_surface_destroy()
   wl_shell_surface_destroy(shell_surface);

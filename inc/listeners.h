@@ -8,6 +8,8 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <wayland-cursor.h>
+#include <wayland-util.h>
 #include <xkbcommon/xkbcommon.h>
 
 #include "core/defs.h"
@@ -23,17 +25,25 @@ static void on_shm_format(void* data, struct wl_shm* shm,
   shm_format = fmt;
   char* s;
   switch (fmt) {
-    case WL_SHM_FORMAT_ARGB8888: s = "ARGB8888"; break;
-    case WL_SHM_FORMAT_XRGB8888: s = "XRGB8888"; break;
-    case WL_SHM_FORMAT_RGB565: s = "RGB565"; break;
-    default: s = "other format"; break;
+    case WL_SHM_FORMAT_ARGB8888:
+      s = "ARGB8888";
+      break;
+    case WL_SHM_FORMAT_XRGB8888:
+      s = "XRGB8888";
+      break;
+    case WL_SHM_FORMAT_RGB565:
+      s = "RGB565";
+      break;
+    default:
+      s = "other format";
+      break;
   }
   printf("Avaiable pixel format: %s\n", s);
 }
 
 struct wl_shm_listener shm_listener = {.format = on_shm_format};
 
-/* ----------------------------------- 缓冲区 ---------------------------------- */
+/* ----------------------------------- 缓冲区 ----------------------------------*/
 
 // 合成器不再使用此缓冲区
 void on_buffer_released(void* data, struct wl_buffer* buffer) {
@@ -42,7 +52,7 @@ void on_buffer_released(void* data, struct wl_buffer* buffer) {
 
 struct wl_buffer_listener buffer_listener = {.release = on_buffer_released};
 
-/* -------------------------------- surface相关 ------------------------------- */
+/* -------------------------------- surface相关 -------------------------------*/
 
 static void on_surface_enter_output(void* data, struct wl_surface* wl_surface,
                                     struct wl_output* output) {
@@ -61,7 +71,7 @@ struct wl_surface_listener surface_listener = {
 static void on_surface_ping(void* data, struct wl_shell_surface* shell_surface,
                             uint32_t serial) {
   // 填写的回调是由客户端自己调用的，不是我们程序员手动调用的
-  wl_shell_surface_pong(shell_surface, serial); // 客户端pong一下
+  wl_shell_surface_pong(shell_surface, serial);  // 客户端pong一下
   printf("Compositor ping : %u\n", serial);
 }
 
@@ -89,6 +99,13 @@ static void on_pointer_enter(void* data, struct wl_pointer* pointer,
                              wl_fixed_t sx, wl_fixed_t sy) {
   printf("Pointer entered surface %p at %f %f\n", surface,
          wl_fixed_to_double(sx), wl_fixed_to_double(sy));
+  struct wl_cursor_image* image = default_cursor->images[0];
+  wl_pointer_set_cursor(pointer, serial, cursor_surface, image->hotspot_x,
+                        image->hotspot_y);
+  struct wl_buffer* buffer = wl_cursor_image_get_buffer(image);
+  wl_surface_attach(cursor_surface, buffer, 0, 0);
+  wl_surface_damage(cursor_surface, 0, 0, image->width, image->height);
+  wl_surface_commit(cursor_surface);
 }
 
 static void on_pointer_leave(void* data, struct wl_pointer* pointer,
@@ -106,13 +123,18 @@ static void on_pointer_button(void* data, struct wl_pointer* wl_pointer,
                               uint32_t serial, uint32_t time, uint32_t button,
                               uint32_t state) {
   printf("Pointer button\n");
+  // 当鼠标被按下，并且按的是左键时，就可以移动窗口了
   if (button == BTN_LEFT && state == WL_POINTER_BUTTON_STATE_PRESSED)
     wl_shell_surface_move(shell_surface, seat, serial);
 }
 
 static void on_pointer_axis(void* data, struct wl_pointer* wl_pointer,
                             uint32_t time, uint32_t axis, wl_fixed_t value) {
-  printf("Pointer axis\n");
+  printf("Pointer axis: %u %f\n", axis, wl_fixed_to_double(value));
+  // 如果向上滚动鼠标滚轮，就减小透明度
+  if(value > 0 && transpranet < 255) transpranet += 5;
+  // 否则增加透明度
+  else if(value < 0 && transpranet > 0) transpranet -= 5;
 }
 
 struct wl_pointer_listener pointer_listener = {.enter = on_pointer_enter,
@@ -132,7 +154,7 @@ static void on_keyboard_keymap(void* data, struct wl_keyboard* keyboard,
     close(fd);
     exit(EXIT_FAILURE);
   }
-  xkb_keymap_unref(keymap); // 释放旧的keymap
+  xkb_keymap_unref(keymap);  // 释放旧的keymap
   // 根据键盘上下文创建一个新的keymap
   keymap = xkb_keymap_new_from_string(xkb_context, keymap_string,
                                       XKB_KEYMAP_FORMAT_TEXT_V1,
@@ -143,8 +165,8 @@ static void on_keyboard_keymap(void* data, struct wl_keyboard* keyboard,
     exit(EXIT_FAILURE);
   }
   close(fd);
-  xkb_state_unref(xkb_state); // 释放旧的键盘状态
-  xkb_state = xkb_state_new(keymap); // 更新键盘状态
+  xkb_state_unref(xkb_state);         // 释放旧的键盘状态
+  xkb_state = xkb_state_new(keymap);  // 更新键盘状态
 }
 // 当前surface获得键盘焦点
 static void on_keyboard_enter(void* data, struct wl_keyboard* keyboard,
@@ -157,15 +179,16 @@ static void on_keyboard_leave(void* data, struct wl_keyboard* keyboard,
 static void on_keyboard_key(void* data, struct wl_keyboard* keyboard,
                             uint32_t serial, uint32_t time, uint32_t key,
                             uint32_t state) {
-  if (state == WL_KEYBOARD_KEY_STATE_PRESSED) { // 当键被按下
+  if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {  // 当键被按下
     xkb_keysym_t keysym = xkb_state_key_get_one_sym(xkb_state, key + 8);
     uint32_t utf32 = xkb_keysym_to_utf32(keysym);
     static bool running = true;
     if (utf32) {
-      if (utf32 >= 0x21 && utf32 <= 0x7E) { // 如果按下的键是字母或数字，则打印对应的字符
+      if (utf32 >= 0x21 &&
+          utf32 <= 0x7E) {  // 如果按下的键是字母或数字，则打印对应的字符
         printf("the key %c was pressed\n", (char)utf32);
-        if (utf32 == 'q') running = false; // 如果按下的是 q 键，则终止窗口运行
-      } else { // 如果按下的键是其他键，则打印对应的Unicode编码
+        if (utf32 == 'q') running = false;  // 如果按下的是 q 键，则终止窗口运行
+      } else {  // 如果按下的键是其他键，则打印对应的Unicode编码
         printf("the key U+%04X was pressed\n", utf32);
       }
     } else {
@@ -242,7 +265,7 @@ static void on_identify_seat(void* data, struct wl_seat* seat,
 struct wl_seat_listener seat_listener = {
     .capabilities = on_seat_capabilities_changed, .name = on_identify_seat};
 
-/* ----------------------------------- 事件回调 ----------------------------------- */
+/* ----------------------------------- 帧回调 ---------------------------------- */
 
 void on_frame_redraw(void* data, struct wl_callback* callback,
                      uint32_t callback_data);
@@ -253,13 +276,14 @@ struct wl_callback_listener frame_callback_listener = {.done = on_frame_redraw};
 void on_frame_redraw(void* data, struct wl_callback* callback,
                      uint32_t callback_data) {
   // printf("Frame redrawing\n");
-  wl_callback_destroy(callback);  // 不需要这个callback了
-  wl_surface_damage(surface, 0, 0, WIDTH, HEIGHT);
-  paint_pixels(WIDTH, HEIGHT, GREEN, WHITE);
-  // 重新来一个callback
+  wl_callback_destroy(callback);  // 不需要这个callback了，可以销毁
+  paint_pixels_into_shm_data(WIDTH, HEIGHT, GREEN, WHITE);
+  // 重新创建一帧，然后填充surface的新内容
   frame_callback = wl_surface_frame(surface);
-  wl_surface_attach(surface, buffer, 0, 0);
   wl_callback_add_listener(frame_callback, &frame_callback_listener, NULL);
+  wl_surface_attach(surface, buffer, 0, 0);
+  // 通知合成器
+  wl_surface_damage(surface, 0, 0, WIDTH, HEIGHT);
   wl_surface_commit(surface);
 }
 
