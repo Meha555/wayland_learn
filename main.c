@@ -192,6 +192,7 @@ int main() {
   // wl_subsurface_destroy(sub_surface);
   // wl_subcompositor_destroy(wl_sub_compositor);
   // wl_buffer_destroy(cursor_buffer);
+  wl_seat_destroy(seat);
   wl_surface_destroy(g_window.surface.surface);
   wl_compositor_destroy(g_compositor);
   wl_buffer_destroy(g_window.shm.buffer);

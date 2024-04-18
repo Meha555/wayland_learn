@@ -1,4 +1,4 @@
-message(STATUS "In examples dir")
+message(STATUS "In tests dir")
 
 include(../common.cmake)
 
