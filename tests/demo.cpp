@@ -9,7 +9,6 @@
  */
 
 extern "C" {
-#include "../inc/extra/xdg-shell-client-protocol.h"
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -20,6 +19,8 @@ extern "C" {
 #include <unistd.h>
 #include <wayland-client-protocol.h>
 #include <wayland-client.h>
+
+#include "../inc/extra/xdg-shell-client-protocol.h"
 }
 
 template <typename Obj>
@@ -74,7 +75,8 @@ void resz()
 {
     int32_t fd = alc_shm(w * h * 4); // 4是因为每个像素占4个字节（R G B Alpha）
 
-    pixl = (uint8_t*)mmap(0, w * h * 4, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0); // 将共享内存映射到进程地址空间，获得其fd
+    pixl = (uint8_t*)mmap(0, w * h * 4, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
+        0); // 将共享内存映射到进程地址空间，获得其fd
 
     struct wl_shm_pool* pool = wl_shm_create_pool(shm, fd, w * h * 4);
     bfr = wl_shm_pool_create_buffer(pool, 0, w, h, w * 4, WL_SHM_FORMAT_ARGB8888);
@@ -134,7 +136,8 @@ void top_conf(void* data, struct xdg_toplevel* top, int32_t nw, int32_t nh,
 
 void top_cls(void* data, struct xdg_toplevel* top) { cls = 1; }
 
-void top_conf_bounds(void* data, struct xdg_toplevel* top, int32_t w, int32_t h)
+void top_conf_bounds(void* data, struct xdg_toplevel* top, int32_t w,
+    int32_t h)
 {
     fprintf(stderr, "Recommend bounds for %p: %dx%d\n", top, w, h);
 }
@@ -143,7 +146,8 @@ void top_wm_cap(void* data, struct xdg_toplevel* top, struct wl_array* caps)
     fprintf(stderr, "Compositor supports:\n");
     uint32_t* cap = nullptr;
     // wl_array_for_each(cap, caps)
-    for (cap = (uint32_t*)caps->data; (const char*)cap < ((const char*)caps->data + caps->size); cap++) {
+    for (cap = (uint32_t*)caps->data;
+         (const char*)cap < ((const char*)caps->data + caps->size); cap++) {
         fprintf(stderr, "\t%p\n", cap);
     }
 }
@@ -220,7 +224,8 @@ static void on_pointer_axis_discrete(void* data, struct wl_pointer* wl_pointer,
 static void on_pointer_warp(void* data, struct wl_pointer* wl_pointer,
     wl_fixed_t surface_x, wl_fixed_t surface_y)
 {
-    printf("Pointer warp at %f %f\n", wl_fixed_to_double(surface_x), wl_fixed_to_double(surface_y));
+    printf("Pointer warp at %f %f\n", wl_fixed_to_double(surface_x),
+        wl_fixed_to_double(surface_y));
 }
 
 struct wl_pointer_listener pointer_listener = {
@@ -291,57 +296,51 @@ void seat_name(void* data, struct wl_seat* seat, const char* name) { }
 struct wl_seat_listener seat_list = { .capabilities = seat_cap,
     .name = seat_name };
 
-static void out_geo(void* data, struct wl_output* wl_output,
-    int32_t x,
-    int32_t y,
-    int32_t physical_width,
-    int32_t physical_height,
-    int32_t subpixel,
-    const char* make,
-    const char* model,
+static void out_geo(void* data, struct wl_output* wl_output, int32_t x,
+    int32_t y, int32_t physical_width, int32_t physical_height,
+    int32_t subpixel, const char* make, const char* model,
     int32_t transform)
 {
-    fprintf(stderr, "wl_output %p Output geo: (%d, %d) (%dx%d) %d %s %s %d\n", wl_output, x, y, physical_width, physical_height, subpixel, make, model, transform);
+    fprintf(stderr, "wl_output %p Output geo: (%d, %d) (%dx%d) %d %s %s %d\n",
+        wl_output, x, y, physical_width, physical_height, subpixel, make,
+        model, transform);
 }
 
-static void out_mode(void* data,
-    struct wl_output* wl_output,
-    uint32_t flags,
-    int32_t width,
-    int32_t height,
-    int32_t refresh)
+static void out_mode(void* data, struct wl_output* wl_output, uint32_t flags,
+    int32_t width, int32_t height, int32_t refresh)
 {
-    fprintf(stderr, "wl_output %p Available mode: %u %dx%d %dmHz\n", wl_output, flags, width, height, refresh);
+    fprintf(stderr, "wl_output %p Available mode: %u %dx%d %dmHz\n", wl_output,
+        flags, width, height, refresh);
 }
 
-static void out_done(void* data,
-    struct wl_output* wl_output)
+static void out_done(void* data, struct wl_output* wl_output)
 {
     fprintf(stderr, "wl_output %p 's attributes has been changed!\n", wl_output);
 }
 
-static void out_scale(void* data,
-    struct wl_output* wl_output,
-    int32_t factor)
+static void out_scale(void* data, struct wl_output* wl_output, int32_t factor)
 {
     fprintf(stderr, "wl_output %p 's Scale ratio: %d\n", wl_output, factor);
 }
 
-static void out_name(void* data,
-    struct wl_output* wl_output,
+static void out_name(void* data, struct wl_output* wl_output,
     const char* name)
 {
     fprintf(stderr, "wl_output %p 's Name: %s\n", wl_output, name);
 }
 
-static void out_description(void* data,
-    struct wl_output* wl_output,
+static void out_description(void* data, struct wl_output* wl_output,
     const char* description)
 {
     fprintf(stderr, "wl_output %p 's Description: %s\n", wl_output, description);
 }
 
-struct wl_output_listener out_list = { .geometry = out_geo, .mode = out_mode, .done = out_done, .scale = out_scale, .name = out_name, .description = out_description };
+struct wl_output_listener out_list = { .geometry = out_geo,
+    .mode = out_mode,
+    .done = out_done,
+    .scale = out_scale,
+    .name = out_name,
+    .description = out_description };
 
 void reg_glob(void* data, struct wl_registry* reg, uint32_t name,
     const char* intf, uint32_t v)
@@ -349,27 +348,25 @@ void reg_glob(void* data, struct wl_registry* reg, uint32_t name,
     fprintf(stderr, "Global add: %s , version: %u, name: %u\n", intf, v, name);
     // 为了测试，这里申请尽可能多的全局对象
     if (!strcmp(intf, wl_compositor_interface.name)) {
-        comp = static_cast<wl_compositor*>(wl_registry_bind(reg, name, &wl_compositor_interface, v));
+        comp = static_cast<wl_compositor*>(
+            wl_registry_bind(reg, name, &wl_compositor_interface, v));
         fprintf(stderr, "compositor = %p\n", comp);
     } else if (!strcmp(intf, wl_shm_interface.name)) {
         shm = static_cast<wl_shm*>(wl_registry_bind(reg, name, &wl_shm_interface, v));
         fprintf(stderr, "shm = %p\n", shm);
     } else if (!strcmp(intf, xdg_wm_base_interface.name)) {
-        sh = static_cast<xdg_wm_base*>(wl_registry_bind(reg, name, &xdg_wm_base_interface, v));
+        sh = static_cast<xdg_wm_base*>(
+            wl_registry_bind(reg, name, &xdg_wm_base_interface, v));
         fprintf(stderr, "shell = %p\n", sh);
         xdg_wm_base_add_listener(sh, &sh_list, &sh);
     } else if (!strcmp(intf, wl_seat_interface.name)) {
-        seat = {
-            .obj = static_cast<wl_seat*>(wl_registry_bind(reg, name, &wl_seat_interface, v)),
-            .name = name
-        };
+        seat = { .obj = static_cast<wl_seat*>(wl_registry_bind(reg, name, &wl_seat_interface, v)),
+            .name = name };
         fprintf(stderr, "seat = %p\n", seat.obj);
         wl_seat_add_listener(seat.obj, &seat_list, &seat.obj);
     } else if (!strcmp(intf, wl_output_interface.name)) {
-        out = {
-            .obj = static_cast<wl_output*>(wl_registry_bind(reg, name, &wl_output_interface, v)),
-            .name = name
-        };
+        out = { .obj = static_cast<wl_output*>(wl_registry_bind(reg, name, &wl_output_interface, v)),
+            .name = name };
         fprintf(stderr, "output = %p\n", out.obj);
         wl_output_add_listener(out.obj, &out_list, &out.obj);
     }
@@ -378,15 +375,22 @@ void reg_glob(void* data, struct wl_registry* reg, uint32_t name,
 void reg_glob_rem(void* data, struct wl_registry* reg, uint32_t name)
 {
     fprintf(stderr, "Notify the client of removed global objects.\n");
-    // This event notifies the client that the global identified by name is no longer available. If the client bound to the global using the bind request, the client should now destroy that object.
-    // The object remains valid and requests to the object will be ignored until the client destroys it, to avoid races between the global going away and a client sending a request to it.
-
-    // client should destroy it
+    /*
+    This event notifies the client that the global identified by name is no
+    longer available. If the client bound to the global using the bind request,
+    the client should now destroy that object.
+    这个事件通知客户端，由name标识的全局变量不再可用。如果客户端之前使用绑定请求绑定了这个全局变量，那么客户端现在应该销毁这个对象。
+    The object remains valid and requests to the object will be ignored until the
+    client destroys it, to avoid races between the global going away and a client
+    sending a request to it.
+    对象直到客户端销毁它之前都还一直有效但有关这个对象的所有请求都会被忽略，这样可以避免在全局对象消失之前客户端发送请求所导致的竞态问题。
+    */
     if (name == out.name) {
+        // 手动发起release请求，不release的话协议没有说会发生什么，但是应该会导致资源泄露
         wl_output_release(out.obj);
         fprintf(stderr, "wl_output %p@%d removed!\n", out.obj, out.name);
         fprintf(stderr, "========================111111=========================\n");
-        sleep(5); // 需要加延迟，否则全局对象还没有那么快被销毁
+        sleep(10); // 需要加延迟，否则全局对象还没有那么快被销毁【QtWayland中设置的是5s，见deferred_destroy_global_func这个函数】
         out.obj = static_cast<wl_output*>(wl_registry_bind(reg, name, &wl_output_interface, 4));
         out.name = name;
         fprintf(stderr, "========================222222=========================\n");
